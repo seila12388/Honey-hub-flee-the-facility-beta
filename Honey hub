@@ -1,0 +1,165 @@
+# Honey-hub-flee-the-facility-beta
+It's in beta 
+-- FTF / Roblox — Mantém WalkSpeed quando o jogo tenta reduzir (toggle ON/OFF)
+-- Uso: cole no executor. Teste em conta secundária.
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local CoreGui = game:GetService("CoreGui")
+
+local LocalPlayer = Players.LocalPlayer
+
+-- Config inicial
+local config = {
+    enabled = false,        -- começa desligado
+    targetWalkSpeed = 20,   -- velocidade alvo (ajuste para a que você quer manter)
+    tolerance = 0.5,        -- tolerância antes de corrigir
+    checkInterval = 0.08,   -- intervalo de verificação (segundos)
+}
+
+-- GUI simples (no CoreGui)
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "KeepSpeed_GUI"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = CoreGui
+
+local frame = Instance.new("Frame", screenGui)
+frame.Size = UDim2.new(0, 200, 0, 80)
+frame.Position = UDim2.new(0, 12, 0.5, -40)
+frame.BackgroundTransparency = 0.25
+frame.BackgroundColor3 = Color3.fromRGB(25,25,25)
+frame.BorderSizePixel = 0
+frame.Active = true
+frame.Draggable = true
+
+local title = Instance.new("TextLabel", frame)
+title.Size = UDim2.new(1, -12, 0, 24)
+title.Position = UDim2.new(0, 6, 0, 6)
+title.BackgroundTransparency = 1
+title.Text = "KeepSpeed — Manter Velocidade"
+title.TextColor3 = Color3.fromRGB(255,255,255)
+title.TextScaled = true
+title.Font = Enum.Font.SourceSansBold
+
+local speedLabel = Instance.new("TextLabel", frame)
+speedLabel.Size = UDim2.new(0.6, -6, 0, 26)
+speedLabel.Position = UDim2.new(0, 6, 0, 32)
+speedLabel.BackgroundTransparency = 1
+speedLabel.Text = "Velocidade: " .. tostring(config.targetWalkSpeed)
+speedLabel.TextXAlignment = Enum.TextXAlignment.Left
+speedLabel.TextColor3 = Color3.fromRGB(230,230,230)
+speedLabel.Font = Enum.Font.SourceSans
+speedLabel.TextSize = 14
+
+local speedInput = Instance.new("TextBox", frame)
+speedInput.Size = UDim2.new(0.34, -8, 0, 26)
+speedInput.Position = UDim2.new(0.6, 0, 0, 32)
+speedInput.ClearTextOnFocus = false
+speedInput.Text = tostring(config.targetWalkSpeed)
+speedInput.Font = Enum.Font.SourceSans
+speedInput.TextSize = 14
+
+local toggleBtn = Instance.new("TextButton", frame)
+toggleBtn.Size = UDim2.new(1, -12, 0, 26)
+toggleBtn.Position = UDim2.new(0, 6, 1, -32)
+toggleBtn.Text = "OFF"
+toggleBtn.Font = Enum.Font.SourceSansBold
+toggleBtn.TextSize = 16
+toggleBtn.BackgroundColor3 = Color3.fromRGB(160,40,40)
+toggleBtn.TextColor3 = Color3.fromRGB(255,255,255)
+
+-- Função para atualizar estado do botão
+local function updateToggleVisual()
+    if config.enabled then
+        toggleBtn.Text = "ON"
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(40,160,40)
+    else
+        toggleBtn.Text = "OFF"
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(160,40,40)
+    end
+end
+
+toggleBtn.MouseButton1Click:Connect(function()
+    config.enabled = not config.enabled
+    updateToggleVisual()
+end)
+
+speedInput.FocusLost:Connect(function(enterPressed)
+    local v = tonumber(speedInput.Text)
+    if v and v > 0 and v <= 100 then
+        config.targetWalkSpeed = v
+        speedLabel.Text = "Velocidade: " .. tostring(config.targetWalkSpeed)
+    else
+        -- restaura texto se inválido
+        speedInput.Text = tostring(config.targetWalkSpeed)
+    end
+end)
+
+updateToggleVisual()
+
+-- Utility: pega o humanoid do localplayer (reconecta quando spawn)
+local currentHumanoid
+local function refreshHumanoid()
+    currentHumanoid = nil
+    if LocalPlayer and LocalPlayer.Character then
+        currentHumanoid = LocalPlayer.Character:FindFirstChildWhichIsA("Humanoid")
+    end
+end
+
+LocalPlayer.CharacterAdded:Connect(function()
+    wait(0.1)
+    refreshHumanoid()
+end)
+
+-- se já tiver character no momento do load
+refreshHumanoid()
+
+-- Guarda base de WalkSpeed caso queira sincronizar automaticamente
+local baseStored = nil
+local function ensureBaseStored()
+    if not baseStored and currentHumanoid then
+        baseStored = currentHumanoid.WalkSpeed
+        -- se quiser que comece com target igual ao base automático:
+        -- config.targetWalkSpeed = baseStored
+        -- speedLabel.Text = "Velocidade: " .. tostring(config.targetWalkSpeed)
+    end
+end
+
+-- Loop principal que corrige WalkSpeed se necessário
+spawn(function()
+    while true do
+        -- tenta atualizar humanoid referencia (por segurança)
+        if not currentHumanoid and LocalPlayer and LocalPlayer.Character then
+            currentHumanoid = LocalPlayer.Character:FindFirstChildWhichIsA("Humanoid")
+        end
+
+        if currentHumanoid then
+            ensureBaseStored()
+            if config.enabled then
+                -- se a velocidade atual estiver menor que target - tolerance, reajusta
+                local ok, cur = pcall(function() return currentHumanoid.WalkSpeed end)
+                if ok and cur then
+                    if cur < (config.targetWalkSpeed - config.tolerance) then
+                        pcall(function()
+                            currentHumanoid.WalkSpeed = config.targetWalkSpeed
+                        end)
+                    end
+                    -- opcional: se o jogo mudar a velocidade pra maior (powerups), respeitaria isso.
+                    -- Se quiser forçar sempre para exatamente target, use:
+                    -- pcall(function() currentHumanoid.WalkSpeed = config.targetWalkSpeed end)
+                end
+            end
+        end
+
+        wait(config.checkInterval)
+    end
+end)
+
+-- Limpeza ao fechar (opcional)
+screenGui.Destroying:Connect(function()
+    -- tenta restaurar humanoid para valor base salvo
+    pcall(function()
+        if currentHumanoid and baseStored then currentHumanoid.WalkSpeed = baseStored end
+    end)
+end)
+
+print("KeepSpeed script carregado. Toggle GUI disponível.")
